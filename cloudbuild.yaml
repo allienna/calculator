@@ -1,8 +1,73 @@
 steps:
 
-  - id: 'unit-test' # Run unit tests
-    name: 'python:3.7'
-    args: ["python", "-m", "unittest", "discover", "--verbose"]
+# See https://cloud.google.com/cloud-build/docs/access-private-github-repos
+
+  # Configure environment to interact with Github
+  - id: 'decrypt-key'
+    name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - kms
+      - decrypt
+      - --ciphertext-file=cloudbuild/id_rsa.enc
+      - --plaintext-file=/root/.ssh/id_rsa
+      - --location=global
+      - --keyring=github-writer
+      - --key=github-key
+      - --project=calculator-demo-sfeir
+    volumes:
+      - name: 'ssh'
+        path: '/root/.ssh'
+
+  - id: 'set-up-git-credentials'
+    name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        chmod 600 /root/.ssh/id_rsa
+        cat <<EOF >/root/.ssh/config
+        Hostname github.com
+        IdentityFile /root/.ssh/id_rsa
+        EOF
+        mv cloudbuild/known_hosts /root/.ssh/known_hosts
+    volumes:
+      - name: 'ssh'
+        path: '/root/.ssh'
+
+  - id: 'rm-tarball-source'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        rm -rf * .versionrc .git*
+
+  - id: 'git-clone'
+    name: 'gcr.io/cloud-builders/git'
+    args:
+      - clone
+      - --branch=$BRANCH_NAME
+      - --single-branch
+      - git@github.com:allienna/calculator.git
+      - .
+    volumes:
+      - name: 'ssh'
+        path: /root/.ssh
+
+  - id: 'git-config'
+    name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        git config user.email "cloudbuildm@calculator.com"
+        git config user.name "CloudBuild"
+
+  - id: 'check-last-commits'
+    name: 'gcr.io/calculator-demo-sfeir/standard-version'
+    entrypoint: 'make'
+    args: ["check-last-commit"]
+    waitFor: ['git-clone']
 
   - id: 'release'
     name: 'gcr.io/calculator-demo-sfeir/standard-version'
@@ -10,3 +75,20 @@ steps:
     args: ["release"]
     env:
       - 'GIT_BRANCH=$BRANCH_NAME'
+    volumes:
+      - name: 'ssh'
+        path: /root/.ssh
+
+  - id: 'unit-test'
+    name: 'python:3.7'
+    args: ["python", "-m", "unittest", "discover", "--verbose"]
+
+  - id: 'commit-and-push'
+    name: 'gcr.io/calculator-demo-sfeir/standard-version'
+    entrypoint: 'make'
+    args: ['commit-and-push-release']
+    env:
+      - 'GIT_BRANCH=$BRANCH_NAME'
+    volumes:
+      - name: 'ssh'
+        path: '/root/.ssh'

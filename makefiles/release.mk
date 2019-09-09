@@ -43,3 +43,17 @@ endif
 	@echo "+ $@"
 	@sed -i "s#\$$#-$(GIT_BRANCH)-$(COMMIT_ID)#; s#/#-#" VERSION
 	@cat VERSION
+
+.PHONY: commit-and-push-release
+commit-and-push-release: ## commit CHANGELOG and commit/push current version
+	@echo "+ $@"
+ifeq ($(GIT_BRANCH),master)
+	@git add CHANGELOG.md VERSION
+	@git commit -m "chore(release): `cat VERSION`"
+	@git push --follow-tags origin $(GIT_BRANCH)
+endif
+
+.PHONY: check-last-commit
+check-last-commit: ## validate that the last commit is not a release
+	@echo "+ $@"
+	@git log -1 --pretty=%s | grep -qv "chore(release): "
