@@ -3,3 +3,10 @@ steps:
   - id: 'unit-test' # Run unit tests
     name: 'python:3.7'
     args: ["python", "-m", "unittest", "discover", "--verbose"]
+
+  - id: 'release'
+    name: 'gcr.io/calculator-demo-sfeir/standard-version'
+    entrypoint: 'make'
+    args: ["release"]
+    env:
+      - 'GIT_BRANCH=$BRANCH_NAME'
